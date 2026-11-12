@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales Analytics Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f3f4f6; --card: #ffffff; --text: #111827; --muted: #6b7280; --border: #e5e7eb;
+    --brand: #118dff; --won: #12239e; --lost: #e66c37; --open: #6b007b; --grid: #eef0f3;
+    --c1: #118dff; --c2: #12239e; --c3: #e66c37; --c4: #6b007b; --c5: #1aab40;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --card: #1c2128; --text: #e5e7eb; --muted: #9ca3af; --border: #2d3440; --grid: #2d3440;
+    }
+  }
+  :root[data-theme="dark"] { --bg: #111418; --card: #1c2128; --text: #e5e7eb; --muted: #9ca3af; --border: #2d3440; --grid: #2d3440; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+           padding: 14px 20px; background: var(--card); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .meta { color: var(--muted); font-size: 12px; }
+
+  .layout { display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 14px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  aside.slicers { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px; align-self: start; }
+  .slicers h3 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 10px 0 6px; letter-spacing: .04em; }
+  .slicers h3:first-child { margin-top: 0; }
+  .chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--border); background: transparent; color: var(--text); padding: 4px 9px;
+          border-radius: 4px; cursor: pointer; font: inherit; font-size: 12px; }
+  .chip.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+  .content { display: grid; gap: 14px; min-width: 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; border-top: 3px solid var(--brand); }
+  .tile:nth-child(2) { border-top-color: var(--c2); }
+  .tile:nth-child(3) { border-top-color: var(--c5); }
+  .tile:nth-child(4) { border-top-color: var(--c3); }
+  .tile:nth-child(5) { border-top-color: var(--c4); }
+  .tile .label { color: var(--muted); font-size: 12px; }
+  .tile .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .tile .sub { color: var(--muted); font-size: 11px; }
+
+  .row { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+  .row.equal { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) { .row, .row.equal { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+  .panel h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .chart-box { position: relative; height: 240px; }
+
+  /* Seaborn-style heatmap */
+  .heat { display: grid; gap: 3px; font-size: 11px; }
+  .heat .cell { height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 3px;
+                color: #fff; font-weight: 500; }
+  .heat .hdr { color: var(--muted); display: flex; align-items: center; justify-content: center; }
+
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; cursor: pointer; user-select: none; }
+  td.num, th.num { text-align: right; }
+  .tag { padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .tag.won { background: rgba(18,35,158,.12); color: var(--won); }
+  .tag.lost { background: rgba(230,108,55,.14); color: var(--lost); }
+  .tag.open { background: rgba(107,0,123,.12); color: var(--open); }
+  .dark-note { color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sales Performance</h1>
+  <div class="meta">Jan – Jul 2026 · 50 deals · 5 reps · 4 regions</div>
+</header>
+
+<div class="layout">
+  <aside class="slicers">
+    <h3>Region</h3><div class="chip-group" id="sRegion"></div>
+    <h3>Product</h3><div class="chip-group" id="sProduct"></div>
+    <h3>Customer</h3><div class="chip-group" id="sCustomer"></div>
+    <h3>Rep</h3><div class="chip-group" id="sRep"></div>
+    <p class="dark-note" style="margin-top:14px">Click chips to filter. Click again to clear.</p>
+  </aside>
+
+  <div class="content">
+    <section class="tiles" id="tiles"></section>
+
+    <div class="row">
+      <div class="panel">
+        <h2>Monthly revenue won (trend)</h2>
+        <div class="chart-box"><canvas id="trend"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>Stage mix</h2>
+        <div class="chart-box"><canvas id="stage"></canvas></div>
+      </div>
+    </div>
+
+    <div class="row equal">
+      <div class="panel">
+        <h2>Revenue by rep</h2>
+        <div class="chart-box"><canvas id="rep"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>Revenue by product and customer type</h2>
+        <div class="chart-box"><canvas id="prodCust"></canvas></div>
+      </div>
+    </div>
+
+    <div class="row equal">
+      <div class="panel">
+        <h2>Win rate heatmap: rep × region</h2>
+        <div id="heatmap"></div>
+      </div>
+      <div class="panel">
+        <h2>Win rate by product</h2>
+        <div class="chart-box"><canvas id="winProd"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Deal details <span class="dark-note">(click headers to sort)</span></h2>
+      <div class="scroll"><table id="deals"></table></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA = [{"id": "D001", "date": "2026-01-06", "rep": "Priya Sharma", "region": "North", "product": "Analytics Suite", "stage": "Closed Won", "value": 12500, "qty": 5, "customer": "Enterprise", "won": 1}, {"id": "D002", "date": "2026-01-09", "rep": "Rahul Mehta", "region": "West", "product": "CRM Basic", "stage": "Closed Lost", "value": 3200, "qty": 2, "customer": "SMB", "won": 0}, {"id": "D003", "date": "2026-01-14", "rep": "Anjali Rao", "region": "South", "product": "Analytics Suite", "stage": "Closed Won", "value": 18000, "qty": 6, "customer": "Enterprise", "won": 1}, {"id": "D004", "date": "2026-01-18", "rep": "Vikram Singh", "region": "East", "product": "Data Connector", "stage": "Closed Won", "value": 4500, "qty": 3, "customer": "Mid-Market", "won": 1}, {"id": "D005", "date": "2026-01-22", "rep": "Priya Sharma", "region": "North", "product": "CRM Basic", "stage": "Negotiation", "value": 6800, "qty": 4, "customer": "Mid-Market", "won": 0}, {"id": "D006", "date": "2026-01-27", "rep": "Neha Kapoor", "region": "West", "product": "Analytics Suite", "stage": "Closed Won", "value": 22000, "qty": 8, "customer": "Enterprise", "won": 1}, {"id": "D007", "date": "2026-02-02", "rep": "Rahul Mehta", "region": "West", "product": "Data Connector", "stage": "Closed Lost", "value": 5200, "qty": 3, "customer": "Mid-Market", "won": 0}, {"id": "D008", "date": "2026-02-05", "rep": "Anjali Rao", "region": "South", "product": "CRM Basic", "stage": "Closed Won", "value": 2900, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D009", "date": "2026-02-10", "rep": "Vikram Singh", "region": "East", "product": "Analytics Suite", "stage": "Proposal", "value": 15600, "qty": 5, "customer": "Enterprise", "won": 0}, {"id": "D010", "date": "2026-02-13", "rep": "Neha Kapoor", "region": "West", "product": "CRM Basic", "stage": "Closed Won", "value": 3800, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D011", "date": "2026-02-18", "rep": "Priya Sharma", "region": "North", "product": "Data Connector", "stage": "Closed Won", "value": 7200, "qty": 4, "customer": "Mid-Market", "won": 1}, {"id": "D012", "date": "2026-02-21", "rep": "Rahul Mehta", "region": "West", "product": "Analytics Suite", "stage": "Closed Won", "value": 19500, "qty": 7, "customer": "Enterprise", "won": 1}, {"id": "D013", "date": "2026-02-25", "rep": "Anjali Rao", "region": "South", "product": "Data Connector", "stage": "Closed Lost", "value": 4100, "qty": 2, "customer": "Mid-Market", "won": 0}, {"id": "D014", "date": "2026-03-03", "rep": "Vikram Singh", "region": "East", "product": "CRM Basic", "stage": "Closed Won", "value": 2600, "qty": 1, "customer": "SMB", "won": 1}, {"id": "D015", "date": "2026-03-06", "rep": "Neha Kapoor", "region": "West", "product": "Analytics Suite", "stage": "Negotiation", "value": 21000, "qty": 7, "customer": "Enterprise", "won": 0}, {"id": "D016", "date": "2026-03-10", "rep": "Priya Sharma", "region": "North", "product": "Analytics Suite", "stage": "Closed Won", "value": 14800, "qty": 5, "customer": "Enterprise", "won": 1}, {"id": "D017", "date": "2026-03-13", "rep": "Rahul Mehta", "region": "West", "product": "CRM Basic", "stage": "Closed Won", "value": 3100, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D018", "date": "2026-03-17", "rep": "Anjali Rao", "region": "South", "product": "Analytics Suite", "stage": "Closed Lost", "value": 16500, "qty": 5, "customer": "Enterprise", "won": 0}, {"id": "D019", "date": "2026-03-20", "rep": "Vikram Singh", "region": "East", "product": "Data Connector", "stage": "Closed Won", "value": 5600, "qty": 3, "customer": "Mid-Market", "won": 1}, {"id": "D020", "date": "2026-03-24", "rep": "Neha Kapoor", "region": "West", "product": "Data Connector", "stage": "Proposal", "value": 6300, "qty": 4, "customer": "Mid-Market", "won": 0}, {"id": "D021", "date": "2026-03-28", "rep": "Priya Sharma", "region": "North", "product": "CRM Basic", "stage": "Closed Won", "value": 2800, "qty": 1, "customer": "SMB", "won": 1}, {"id": "D022", "date": "2026-04-02", "rep": "Rahul Mehta", "region": "West", "product": "Analytics Suite", "stage": "Closed Won", "value": 20500, "qty": 6, "customer": "Enterprise", "won": 1}, {"id": "D023", "date": "2026-04-06", "rep": "Anjali Rao", "region": "South", "product": "CRM Basic", "stage": "Closed Won", "value": 3400, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D024", "date": "2026-04-09", "rep": "Vikram Singh", "region": "East", "product": "Analytics Suite", "stage": "Closed Lost", "value": 17200, "qty": 6, "customer": "Enterprise", "won": 0}, {"id": "D025", "date": "2026-04-14", "rep": "Neha Kapoor", "region": "West", "product": "CRM Basic", "stage": "Closed Won", "value": 2700, "qty": 1, "customer": "SMB", "won": 1}, {"id": "D026", "date": "2026-04-17", "rep": "Priya Sharma", "region": "North", "product": "Data Connector", "stage": "Negotiation", "value": 8100, "qty": 5, "customer": "Mid-Market", "won": 0}, {"id": "D027", "date": "2026-04-22", "rep": "Rahul Mehta", "region": "West", "product": "Data Connector", "stage": "Closed Won", "value": 6900, "qty": 4, "customer": "Mid-Market", "won": 1}, {"id": "D028", "date": "2026-04-25", "rep": "Anjali Rao", "region": "South", "product": "Analytics Suite", "stage": "Closed Won", "value": 13400, "qty": 4, "customer": "Enterprise", "won": 1}, {"id": "D029", "date": "2026-04-29", "rep": "Vikram Singh", "region": "East", "product": "CRM Basic", "stage": "Closed Lost", "value": 3000, "qty": 2, "customer": "SMB", "won": 0}, {"id": "D030", "date": "2026-05-04", "rep": "Neha Kapoor", "region": "West", "product": "Analytics Suite", "stage": "Closed Won", "value": 24000, "qty": 8, "customer": "Enterprise", "won": 1}, {"id": "D031", "date": "2026-05-08", "rep": "Priya Sharma", "region": "North", "product": "Analytics Suite", "stage": "Proposal", "value": 11900, "qty": 4, "customer": "Enterprise", "won": 0}, {"id": "D032", "date": "2026-05-12", "rep": "Rahul Mehta", "region": "West", "product": "CRM Basic", "stage": "Closed Won", "value": 3500, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D033", "date": "2026-05-15", "rep": "Anjali Rao", "region": "South", "product": "Data Connector", "stage": "Closed Won", "value": 4800, "qty": 3, "customer": "Mid-Market", "won": 1}, {"id": "D034", "date": "2026-05-19", "rep": "Vikram Singh", "region": "East", "product": "Analytics Suite", "stage": "Closed Won", "value": 16200, "qty": 5, "customer": "Enterprise", "won": 1}, {"id": "D035", "date": "2026-05-22", "rep": "Neha Kapoor", "region": "West", "product": "Data Connector", "stage": "Closed Lost", "value": 5900, "qty": 3, "customer": "Mid-Market", "won": 0}, {"id": "D036", "date": "2026-05-27", "rep": "Priya Sharma", "region": "North", "product": "CRM Basic", "stage": "Closed Won", "value": 2500, "qty": 1, "customer": "SMB", "won": 1}, {"id": "D037", "date": "2026-06-02", "rep": "Rahul Mehta", "region": "West", "product": "Analytics Suite", "stage": "Negotiation", "value": 18800, "qty": 6, "customer": "Enterprise", "won": 0}, {"id": "D038", "date": "2026-06-05", "rep": "Anjali Rao", "region": "South", "product": "CRM Basic", "stage": "Closed Won", "value": 3900, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D039", "date": "2026-06-09", "rep": "Vikram Singh", "region": "East", "product": "Data Connector", "stage": "Closed Won", "value": 6100, "qty": 4, "customer": "Mid-Market", "won": 1}, {"id": "D040", "date": "2026-06-12", "rep": "Neha Kapoor", "region": "West", "product": "CRM Basic", "stage": "Closed Won", "value": 2600, "qty": 1, "customer": "SMB", "won": 1}, {"id": "D041", "date": "2026-06-16", "rep": "Priya Sharma", "region": "North", "product": "Data Connector", "stage": "Closed Lost", "value": 7400, "qty": 4, "customer": "Mid-Market", "won": 0}, {"id": "D042", "date": "2026-06-19", "rep": "Rahul Mehta", "region": "West", "product": "Analytics Suite", "stage": "Closed Won", "value": 21800, "qty": 7, "customer": "Enterprise", "won": 1}, {"id": "D043", "date": "2026-06-23", "rep": "Anjali Rao", "region": "South", "product": "Analytics Suite", "stage": "Proposal", "value": 14300, "qty": 4, "customer": "Enterprise", "won": 0}, {"id": "D044", "date": "2026-06-26", "rep": "Vikram Singh", "region": "East", "product": "CRM Basic", "stage": "Closed Won", "value": 3300, "qty": 2, "customer": "SMB", "won": 1}, {"id": "D045", "date": "2026-07-01", "rep": "Neha Kapoor", "region": "West", "product": "Analytics Suite", "stage": "Closed Won", "value": 19200, "qty": 6, "customer": "Enterprise", "won": 1}, {"id": "D046", "date": "2026-07-06", "rep": "Priya Sharma", "region": "North", "product": "CRM Basic", "stage": "Closed Won", "value": 2900, "qty": 1, "customer": "SMB", "won": 1}, {"id": "D047", "date": "2026-07-10", "rep": "Rahul Mehta", "region": "West", "product": "Data Connector", "stage": "Negotiation", "value": 5500, "qty": 3, "customer": "Mid-Market", "won": 0}, {"id": "D048", "date": "2026-07-14", "rep": "Anjali Rao", "region": "South", "product": "Data Connector", "stage": "Closed Won", "value": 5100, "qty": 3, "customer": "Mid-Market", "won": 1}, {"id": "D049", "date": "2026-07-18", "rep": "Vikram Singh", "region": "East", "product": "Analytics Suite", "stage": "Closed Lost", "value": 15800, "qty": 5, "customer": "Enterprise", "won": 0}, {"id": "D050", "date": "2026-07-22", "rep": "Neha Kapoor", "region": "West", "product": "CRM Basic", "stage": "Closed Won", "value": 3600, "qty": 2, "customer": "SMB", "won": 1}];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const PALETTE = () => [css('--c1'), css('--c2'), css('--c3'), css('--c4'), css('--c5')];
+const fmt = n => "$" + Math.round(n).toLocaleString("en-US");
+const pct = n => (isNaN(n) ? "–" : (n * 100).toFixed(0) + "%");
+const isClosed = d => d.stage.startsWith("Closed");
+
+const state = { region: null, product: null, customer: null, rep: null };
+const slicerFields = { region: "sRegion", product: "sProduct", customer: "sCustomer", rep: "sRep" };
+
+function buildSlicers() {
+  for (const [field, id] of Object.entries(slicerFields)) {
+    const el = document.getElementById(id);
+    const vals = [...new Set(DATA.map(d => d[field]))].sort();
+    el.innerHTML = vals.map(v => `<button class="chip" data-f="${field}" data-v="${v}">${v}</button>`).join("");
+  }
+  document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => {
+    const f = b.dataset.f, v = b.dataset.v;
+    state[f] = state[f] === v ? null : v;
+    render();
+  }));
+}
+
+function filtered() {
+  return DATA.filter(d => Object.entries(state).every(([k, v]) => !v || d[k] === v));
+}
+
+let charts = {};
+function chart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+
+let sortKey = "date", sortDir = 1;
+
+function renderTiles(rows) {
+  const closed = rows.filter(isClosed);
+  const won = rows.filter(d => d.won);
+  const wonVal = won.reduce((s, d) => s + d.value, 0);
+  const winRate = closed.length ? won.length / closed.length : NaN;
+  const avg = won.length ? wonVal / won.length : NaN;
+  const open = rows.filter(d => !isClosed(d)).reduce((s, d) => s + d.value, 0);
+  document.getElementById("tiles").innerHTML = [
+    ["Revenue won", fmt(wonVal), `${won.length} deals`],
+    ["Win rate", pct(winRate), `${won.length} of ${closed.length} closed`],
+    ["Avg deal size", fmt(avg), "won deals"],
+    ["Open pipeline", fmt(open), `${rows.length - closed.length} open deals`],
+    ["Total deals", rows.length, `${closed.length} closed`],
+  ].map(([l, v, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+}
+
+function renderTrend(rows) {
+  const months = [...new Set(DATA.map(d => d.date.slice(0, 7)))].sort();
+  const label = m => new Date(m + "-01").toLocaleString("en-US", {month: "short"});
+  const revenue = months.map(m => rows.filter(d => d.won && d.date.startsWith(m)).reduce((s, d) => s + d.value, 0));
+  const c = PALETTE();
+  chart("trend", {
+    type: "line",
+    data: { labels: months.map(label), datasets: [{
+      label: "Revenue won", data: revenue, borderColor: c[0], backgroundColor: c[0] + "22",
+      fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: c[0] }] },
+    options: scales({ y: { ticks: { callback: v => "$" + (v/1000) + "k" } } }),
+  });
+}
+
+function renderStage(rows) {
+  const stages = ["Closed Won", "Closed Lost", "Proposal", "Negotiation"];
+  const counts = stages.map(s => rows.filter(d => d.stage === s).length);
+  const c = PALETTE();
+  chart("stage", {
+    type: "doughnut",
+    data: { labels: stages, datasets: [{ data: counts, backgroundColor: [c[1], c[2], c[3], c[4]], borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: "62%",
+      plugins: { legend: { position: "right", labels: { color: css('--text'), boxWidth: 10 } } } },
+  });
+}
+
+function renderRep(rows) {
+  const reps = [...new Set(DATA.map(d => d.rep))].sort();
+  const rev = reps.map(r => rows.filter(d => d.rep === r && d.won).reduce((s, d) => s + d.value, 0));
+  const c = PALETTE();
+  chart("rep", {
+    type: "bar",
+    data: { labels: reps, datasets: [{ label: "Revenue", data: rev, backgroundColor: c[0], borderRadius: 3 }] },
+    options: scales({ y: { ticks: { callback: v => "$" + (v/1000) + "k" } } }),
+  });
+}
+
+function renderProdCust(rows) {
+  const prods = [...new Set(DATA.map(d => d.product))].sort();
+  const custs = [...new Set(DATA.map(d => d.customer))].sort();
+  const c = PALETTE();
+  chart("prodCust", {
+    type: "bar",
+    data: { labels: prods, datasets: custs.map((cu, i) => ({
+      label: cu, backgroundColor: c[i],
+      data: prods.map(p => rows.filter(d => d.product === p && d.customer === cu && d.won).reduce((s, d) => s + d.value, 0)),
+      borderRadius: 3,
+    })) },
+    options: scales({ x: { stacked: true }, y: { stacked: true, ticks: { callback: v => "$" + (v/1000) + "k" } } }, true),
+  });
+}
+
+function renderWinProd(rows) {
+  const prods = [...new Set(DATA.map(d => d.product))].sort();
+  const wr = prods.map(p => {
+    const cl = rows.filter(d => d.product === p && isClosed(d));
+    return cl.length ? Math.round(cl.filter(d => d.won).length / cl.length * 100) : 0;
+  });
+  const c = PALETTE();
+  chart("winProd", {
+    type: "bar",
+    data: { labels: prods, datasets: [{ label: "Win rate %", data: wr, backgroundColor: c[1], borderRadius: 3 }] },
+    options: scales({ y: { max: 100, ticks: { callback: v => v + "%" } } }),
+  });
+}
+
+// Seaborn-style annotated heatmap, built with HTML cells
+function renderHeatmap(rows) {
+  const reps = [...new Set(DATA.map(d => d.rep))].sort();
+  const regions = [...new Set(DATA.map(d => d.region))].sort();
+  const cols = regions.length + 1;
+  let html = `<div class="heat" style="grid-template-columns: 90px repeat(${regions.length}, 1fr)">`;
+  html += `<div></div>` + regions.map(r => `<div class="hdr">${r}</div>`).join("");
+  reps.forEach(rep => {
+    html += `<div class="hdr" style="justify-content:flex-start">${rep}</div>`;
+    regions.forEach(reg => {
+      const cl = rows.filter(d => d.rep === rep && d.region === reg && isClosed(d));
+      const w = cl.filter(d => d.won).length;
+      const rate = cl.length ? w / cl.length : null;
+      const bg = rate === null ? "var(--grid)" : `hsl(215, 80%, ${92 - rate * 55}%)`;
+      const color = rate !== null && rate > 0.5 ? "#fff" : "#111";
+      html += `<div class="cell" style="background:${bg};color:${rate===null?'var(--muted)':color}" title="${rep} · ${reg}: ${cl.length} closed">${rate === null ? "–" : pct(rate)}</div>`;
+    });
+  });
+  html += `</div>`;
+  document.getElementById("heatmap").innerHTML = html;
+}
+
+function renderTable(rows) {
+  const cols = [["id","Deal"],["date","Date"],["rep","Rep"],["region","Region"],["product","Product"],
+                ["stage","Stage"],["value","Value","num"],["qty","Qty","num"],["customer","Customer"]];
+  const sorted = [...rows].sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
+  document.getElementById("deals").innerHTML =
+    `<thead><tr>${cols.map(([k,l,c]) => `<th class="${c||""}" data-k="${k}">${l}${sortKey===k?(sortDir>0?" ▲":" ▼"):""}</th>`).join("")}</tr></thead><tbody>` +
+    sorted.map(d => {
+      const cls = d.won ? "won" : isClosed(d) ? "lost" : "open";
+      const lbl = d.won ? "Won" : isClosed(d) ? "Lost" : "Open";
+      return `<tr><td>${d.id}</td><td>${d.date}</td><td>${d.rep}</td><td>${d.region}</td><td>${d.product}</td>
+        <td><span class="tag ${cls}">${lbl}</span></td><td class="num">${fmt(d.value)}</td><td class="num">${d.qty}</td><td>${d.customer}</td></tr>`;
+    }).join("") + `</tbody>`;
+  document.querySelectorAll("#deals th[data-k]").forEach(th => th.addEventListener("click", () => {
+    const k = th.dataset.k;
+    sortDir = sortKey === k ? -sortDir : 1;
+    sortKey = k;
+    render();
+  }));
+}
+
+function scales(extra = {}, stacked = false) {
+  const grid = { color: css('--grid') };
+  const tick = { color: css('--muted') };
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: stacked, labels: { color: css('--text'), boxWidth: 10 } } },
+    scales: {
+      x: { grid: { display: false }, ticks: tick, ...(extra.x || {}) },
+      y: { grid, ticks: tick, beginAtZero: true, ...(extra.y || {}) },
+    },
+  };
+}
+
+function render() {
+  // refresh chip active state
+  document.querySelectorAll(".chip").forEach(b => b.classList.toggle("active", state[b.dataset.f] === b.dataset.v));
+  const rows = filtered();
+  renderTiles(rows);
+  renderTrend(rows);
+  renderStage(rows);
+  renderRep(rows);
+  renderProdCust(rows);
+  renderWinProd(rows);
+  renderHeatmap(rows);
+  renderTable(rows);
+}
+
+buildSlicers();
+if (typeof Chart === "undefined") {
+  document.body.insertAdjacentHTML("afterbegin", '<p style="padding:10px;color:#e66c37">Charts need internet access to load Chart.js from CDN.</p>');
+}
+render();
+</script>
+</body>
+</html>
